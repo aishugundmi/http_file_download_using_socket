@@ -11,6 +11,22 @@
 #include <unistd.h>
 #include <errno.h>
 
+//return errors
+#define	DNS_RESOLVE_ERROR				-1
+#define	SOCKET_CREATION_ERROR			-2
+#define	SOCKET_CONNECTION_ERROR			-3
+#define	SEND_ERROR						-4
+#define MAX_REDIRECTION_ATTEMPT_ERROR 	-5
+
+//switch case states
+#define	EXTRACT_HOST_PATH				0
+#define	SOCKET_CREATION					1
+#define	GET_REQUEST						2
+#define	RECEIVE_HEADER					3
+#define	GET_STATUS_CONTENTLENGTH		4
+#define	RECEIVE_DATA					5
+#define	SAVE_TO_FILE					6
+
 
 int download_url_to_file(char *url, char* file_name)
 {
@@ -29,18 +45,19 @@ int download_url_to_file(char *url, char* file_name)
 	char header_buf[4096];
 	int response = 0;
 	int content_length = 0;
-    char redirected_url[250];
-    int written_bytes = 0;
-    int redirection_attempt_count = 0;
+	char redirected_url[250];
+	int written_bytes = 0;
+	int redirection_attempt_count = 0;
+
 	strcpy(url_buf, url);
 
 	while(1){
 		switch(state){
 			/*************************************** extract host & path ******************************************/
-			case 0:
+			case EXTRACT_HOST_PATH:
 				if(redirection_attempt_count > 3){
 					printf("max redirection attempts reached!\n");
-					return -5;
+					return MAX_REDIRECTION_ATTEMPT_ERROR;
 				}
 				sub = strstr(url_buf, "://");
 				sub += 3;
@@ -59,7 +76,7 @@ int download_url_to_file(char *url, char* file_name)
 				if ( (he = gethostbyname( hostname ) ) == NULL)
 				{
 					printf("unable to do dns resolve!\n");
-					return -1;
+					return DNS_RESOLVE_ERROR;
 				}
 				//Cast the h_addr_list to in_addr , since h_addr_list also has the ip address in long format only
 				addr_list = (struct in_addr **) he->h_addr_list;
@@ -73,14 +90,14 @@ int download_url_to_file(char *url, char* file_name)
 			break;
 
 			/************************************ socket creation *********************************************/
-			case 1:
+			case SOCKET_CREATION:
 				memset(tx_buf, 0, sizeof(tx_buf));
 				//Create socket
 				socket_desc = socket(AF_INET , SOCK_STREAM , 0);
 				if (socket_desc == -1)
 				{
 					printf("Could not create socket!\n");
-					return -2;
+					return SOCKET_CREATION_ERROR;
 				}
 				server.sin_addr.s_addr = inet_addr(ip);
 				server.sin_family = AF_INET;
@@ -91,14 +108,14 @@ int download_url_to_file(char *url, char* file_name)
 				if (connect(socket_desc , (struct sockaddr *)&server , sizeof(server)) < 0)
 				{
 					printf("connect error!\n");
-					return -3;
+					return SOCKET_CONNECTION_ERROR;
 				}
 				puts("Connected\n");
 				state = 2;
 			break;
 
 			/******************************************** get request ********************************************/
-			case 2:
+			case GET_REQUEST:
 				sprintf(tx_buf, "GET /%s HTTP/1.1\r\nHost: %s\r\n", path, hostname);
 			//	strcat(message, "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36\r\n");
 			//	strcat(message, "Accept: text/html\r\n");
@@ -108,14 +125,14 @@ int download_url_to_file(char *url, char* file_name)
 				if( send(socket_desc , tx_buf , strlen(tx_buf) , 0) < 0)
 				{
 					puts("Send failed!\n");
-					return -4;
+					return MAX_REDIRECTION_ATTEMPT_ERROR;
 				}
 				printf("\n request = %s\n", tx_buf);
 				state = 3;
 			break;
 
 			/******************************************* receive header *******************************************/
-			case 3:
+			case RECEIVE_HEADER:
 				received = 0;
 				memset(header_buf, 0, sizeof(header_buf));
 				while(1) {
@@ -130,7 +147,8 @@ int download_url_to_file(char *url, char* file_name)
 			    state = 4;
 			break;
 
-			case 4:
+			/************************************ get status and content length ***********************************/
+			case GET_STATUS_CONTENTLENGTH:
 				response = 0;
 				if(strncmp(header_buf, "HTTP", strlen("HTTP")) == 0){
 					char *s = strstr(header_buf, " ");
@@ -180,7 +198,7 @@ int download_url_to_file(char *url, char* file_name)
 			break;
 
 			/*************************************** receive data ********************************************/
-			case 5:
+			case RECEIVE_DATA:
 			    received = 0;
 			    printf("content_length = %d\n", content_length);
 			    server_reply = malloc(content_length);
@@ -197,7 +215,7 @@ int download_url_to_file(char *url, char* file_name)
 			break;
 
 			/**************************************  save to file **********************************************/
-			case 6:
+			case SAVE_TO_FILE:
 				written_bytes = 0;
 				FILE* fd = fopen(file_name, "wb");
 				while(written_bytes < content_length){
@@ -226,22 +244,22 @@ int main(int argc , char *argv[])
 	char hostname[250], path[250];
 	char *sub;
 
-    if(argc == 1){
-        printf("\nerror! no url passed!\n");
-        printf("usage:\n%s url\n", argv[0]);
-        return 0;
-    }
-    if(argc >=2 )
-    {
-        printf("\nThe command line url passed: %s\n", argv[1]);
-    	strcpy(url_hp, argv[1]);
-    	if(argc == 3)
-    		strcpy(file_name, argv[2]);
-    	else
-    		strcpy(file_name, "file.txt");
-    }
+	if(argc == 1){
+		printf("\nerror! no url passed!\n");
+		printf("usage:\n%s url\n", argv[0]);
+		return 0;
+	}
+	if(argc >=2 )
+	{
+		printf("\nThe command line url passed: %s\n", argv[1]);
+		strcpy(url_hp, argv[1]);
+		if(argc == 3)
+			strcpy(file_name, argv[2]);
+		else
+			strcpy(file_name, "file.txt");
+	}
 
-    download_url_to_file(url_hp, file_name);
+	download_url_to_file(url_hp, file_name);
 
 	return 0;
 }
