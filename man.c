@@ -166,13 +166,9 @@ int download_url_to_file(char *url, char* file_name)
 					}
 				}
 
-				for(int i = 0;  i < strlen(header_buf); i++){
-					if(header_buf[i] >= 'a' && header_buf[i] <= 'z')
-						header_buf[i] = (header_buf[i] - 'a') + 'A';
-				}
-				char *c = strstr(header_buf, "\r\nCONTENT-LENGTH: ");
+				char *c = strstr(header_buf, "\r\nContent-Length: ");
 				if(c){
-					sscanf(c, "\r\nCONTENT-LENGTH: %d\r\n", &content_length);
+					sscanf(c, "\r\nContent-Length: %d\r\n", &content_length);
 				}
 
 				if(response == 200)
@@ -184,11 +180,6 @@ int download_url_to_file(char *url, char* file_name)
 						d += strlen("\r\nLOCATION: ");
 						sscanf(d, "%s\r\n", redirected_url);
 						printf("redirection = %s\n", redirected_url);
-					}
-
-					for(int i = 0;  i < strlen(redirected_url); i++){
-						if(redirected_url[i] >= 'A' && redirected_url[i] <= 'Z')
-							redirected_url[i] = (redirected_url[i] - 'A') + 'a';
 					}
 					strcpy(url_buf, redirected_url);
 					close(socket_desc);
